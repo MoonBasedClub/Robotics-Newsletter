@@ -1,0 +1,1 @@
+"""News scraper backend package."""
