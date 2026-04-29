@@ -1,9 +1,9 @@
 # News Scraper MVP
 
-This repo now includes the first backend foundation for the robotics and AI morning brief MVP:
+This repo now includes the backend foundation for the robotics and AI morning brief MVP:
 
 - `api`: FastAPI service exposing dashboard-facing run endpoints
-- `worker`: scheduled Python worker that creates a valid daily run shape
+- `worker`: scheduled Python worker that discovers candidates, extracts article text, ranks stories, and generates concise outputs
 - `db`: PostgreSQL for persisted runs, stories, and social posts
 
 ## Quick start
@@ -15,4 +15,11 @@ This repo now includes the first backend foundation for the robotics and AI morn
 
 ## Current scope
 
-The worker currently creates a demo run so the dashboard contract is stable while the real discovery, extraction, ranking, and LLM generation steps are implemented.
+The pipeline is intentionally lightweight for MVP:
+
+- Google News RSS query discovery
+- HTML extraction and article cleaning
+- Heuristic ranking and categorization
+- Deterministic summary and social-post generation
+
+That gives us a stable end-to-end backend contract in Docker before we swap in richer LLM generation and more resilient source handling.
