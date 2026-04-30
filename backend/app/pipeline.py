@@ -34,34 +34,35 @@ def run_daily_digest(session: Session, date_override: str | None = None) -> int:
 
     try:
         candidates = discover_candidates(now=now)
+        candidate_records: dict[str, models.CandidateArticle] = {}
         for candidate in candidates:
-            session.add(
-                models.CandidateArticle(
-                    run_id=run.id,
-                    discovered_title=candidate.discovered_title,
-                    discovered_url=candidate.discovered_url,
-                    source_domain=candidate.source_domain,
-                    discovered_at=candidate.discovered_at,
-                    ranking_score=None,
-                    rejected_reason=None,
-                )
+            record = models.CandidateArticle(
+                run_id=run.id,
+                discovered_title=candidate.discovered_title,
+                discovered_url=candidate.discovered_url,
+                source_domain=candidate.source_domain,
+                discovered_at=candidate.discovered_at,
+                ranking_score=None,
+                rejected_reason=None,
             )
+            session.add(record)
+            candidate_records[candidate.discovered_url] = record
         session.flush()
 
         extracted, extraction_failures = extract_and_clean(candidates)
         for candidate, reason in extraction_failures:
-            record = _find_candidate_record(session, run.id, candidate.discovered_url)
+            record = candidate_records.get(candidate.discovered_url)
             if record is not None:
                 record.rejected_reason = reason
 
         ranked, rejected_ranked = rank_and_select(extracted, now=now, limit=8)
         for ranked_article in ranked:
-            record = _find_candidate_record(session, run.id, ranked_article.article.discovered_url)
+            record = candidate_records.get(ranked_article.article.discovered_url)
             if record is not None:
                 record.ranking_score = ranked_article.ranking_score
 
         for article, reason in rejected_ranked:
-            record = _find_candidate_record(session, run.id, article.discovered_url)
+            record = candidate_records.get(article.discovered_url)
             if record is not None:
                 record.rejected_reason = reason
 
@@ -101,17 +102,6 @@ def run_daily_digest(session: Session, date_override: str | None = None) -> int:
         run.completed_at = datetime.now(UTC)
         session.commit()
         raise
-
-
-def _find_candidate_record(
-    session: Session, run_id: int, discovered_url: str
-) -> models.CandidateArticle | None:
-    return session.scalar(
-        select(models.CandidateArticle).where(
-            models.CandidateArticle.run_id == run_id,
-            models.CandidateArticle.discovered_url == discovered_url,
-        )
-    )
 
 
 def _resolve_schedule(date_override: str | None) -> datetime:

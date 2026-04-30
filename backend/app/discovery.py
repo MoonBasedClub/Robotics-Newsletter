@@ -1,8 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Callable
-from urllib.parse import parse_qs, unquote, urlparse
-from urllib.request import urlopen
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 from app.domain import DiscoveredCandidate
@@ -38,12 +38,18 @@ def discover_candidates(
     fetch = fetcher or _default_fetch
     cutoff = now.astimezone(UTC) - timedelta(hours=max_age_hours)
     candidates: list[DiscoveredCandidate] = []
+    seen_urls: set[str] = set()
 
     for queries in QUERY_GROUPS.values():
         for query in queries:
             try:
-                xml_text = fetch(RSS_TEMPLATE.format(query=query.replace(" ", "+")))
-                candidates.extend(_parse_rss(xml_text, cutoff))
+                xml_text = fetch(RSS_TEMPLATE.format(query=quote_plus(query)))
+                for candidate in _parse_rss(xml_text, cutoff):
+                    normalized_url = _normalize_url(candidate.discovered_url)
+                    if normalized_url in seen_urls:
+                        continue
+                    seen_urls.add(normalized_url)
+                    candidates.append(candidate)
             except Exception:
                 continue
 
@@ -62,17 +68,22 @@ def _parse_rss(xml_text: str, cutoff: datetime) -> list[DiscoveredCandidate]:
         if not title or not link or not pub_date_raw:
             continue
 
-        published = parsedate_to_datetime(pub_date_raw).astimezone(UTC)
+        try:
+            published = parsedate_to_datetime(pub_date_raw).astimezone(UTC)
+        except (TypeError, ValueError):
+            continue
         if published < cutoff:
             continue
 
         resolved_url = _resolve_google_news_url(link)
         parsed = urlparse(resolved_url)
+        if not parsed.scheme or not parsed.netloc:
+            continue
         candidates.append(
             DiscoveredCandidate(
                 discovered_title=title,
                 discovered_url=resolved_url,
-                source_domain=parsed.netloc,
+                source_domain=parsed.netloc.lower(),
                 discovered_at=published,
             )
         )
@@ -88,6 +99,13 @@ def _resolve_google_news_url(link: str) -> str:
     return link
 
 
+def _normalize_url(url: str) -> str:
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
+
+
 def _default_fetch(url: str) -> str:
-    with urlopen(url, timeout=20) as response:
+    request = Request(url, headers={"User-Agent": "news-scraper/0.1"})
+    with urlopen(request, timeout=20) as response:
         return response.read().decode("utf-8", errors="ignore")

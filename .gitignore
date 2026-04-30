@@ -1,4 +1,5 @@
 .env
+.claude/docs/ai/morning-brief/api-handoff.md
 __pycache__/
 .pytest_cache/
 *.pyc
@@ -13,12 +14,18 @@ __pycache__/
 venv/
 env/
 ENV/
+.env.local
+.env.*.local
 dist/
 build/
 htmlcov/
 *.egg-info/
 *.log
+.hypothesis/
+.tox/
+.nox/
 .DS_Store
+Thumbs.db
 .vscode/
 .idea/
 postgres_data/

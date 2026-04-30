@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from hashlib import sha256
 from typing import Callable
 from urllib.parse import urljoin, urlparse
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from bs4 import BeautifulSoup
 
@@ -44,9 +45,9 @@ def _extract_article(candidate: DiscoveredCandidate, html: str) -> ExtractedArti
         og_url = _first_meta_property(soup, "og:url")
         canonical_url = og_url or candidate.discovered_url
 
-    title = (
+    title = _collapse_whitespace(
         _first_meta_property(soup, "og:title")
-        or (soup.title.string.strip() if soup.title and soup.title.string else candidate.discovered_title)
+        or (soup.title.string if soup.title and soup.title.string else candidate.discovered_title)
     )
     author = _first_meta_name(soup, "author")
     published_raw = (
@@ -61,11 +62,14 @@ def _extract_article(candidate: DiscoveredCandidate, html: str) -> ExtractedArti
 
     article_root = soup.find("article")
     content_root = article_root or soup.body or soup
-    paragraphs = [
-        text.strip()
-        for text in (node.get_text(" ", strip=True) for node in content_root.find_all(["p", "li"]))
-        if text.strip()
-    ]
+    paragraphs: list[str] = []
+    seen_paragraphs: set[str] = set()
+    for node in content_root.find_all(["p", "li"]):
+        text = _collapse_whitespace(node.get_text(" ", strip=True))
+        if not text or text in seen_paragraphs:
+            continue
+        seen_paragraphs.add(text)
+        paragraphs.append(text)
     cleaned_text = "\n".join(paragraphs)
 
     return ExtractedArticle(
@@ -101,11 +105,22 @@ def _parse_datetime(raw_value: str | None) -> datetime | None:
     if not raw_value:
         return None
     try:
-        return datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
     except ValueError:
-        return None
+        try:
+            parsed = parsedate_to_datetime(raw_value)
+        except (TypeError, ValueError):
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _collapse_whitespace(text: str) -> str:
+    return " ".join(text.split())
 
 
 def _default_fetch(url: str) -> str:
-    with urlopen(url, timeout=20) as response:
+    request = Request(url, headers={"User-Agent": "news-scraper/0.1"})
+    with urlopen(request, timeout=20) as response:
         return response.read().decode("utf-8", errors="ignore")

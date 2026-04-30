@@ -42,6 +42,18 @@ def test_resolve_schedule_uses_new_york_9am_across_dst(monkeypatch):
 def test_rank_and_select_dedupes_and_caps_results():
     now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
     base_text = "Warehouse robotics is moving into measured deployment at scale. " * 8
+    titles = [
+        "Warehouse robotics expands into retail fulfillment",
+        "Humanoid robots enter a logistics pilot",
+        "Warehouse robotics expands into retail fulfillment",
+        "Industrial automation startup raises new funding",
+        "AI agents move into factory planning software",
+        "Robotics policy debate reaches state lawmakers",
+        "Machine learning tools improve quality inspection",
+        "Autonomous systems startup opens new test site",
+        "Foundation model lab ships a smaller model",
+        "Robot safety standards get a new industry draft",
+    ]
     articles = [
         ExtractedArticle(
             discovered_title=f"Story {index}",
@@ -49,7 +61,7 @@ def test_rank_and_select_dedupes_and_caps_results():
             source_domain="example.com",
             discovered_at=now,
             canonical_url=f"https://example.com/canonical-{index if index != 2 else 1}",
-            title="Warehouse robotics expands" if index == 2 else f"Warehouse robotics story {index}",
+            title=titles[index],
             source_name="Example",
             author=None,
             published_at=now,

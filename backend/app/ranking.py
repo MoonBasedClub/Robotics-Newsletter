@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
+import re
 from urllib.parse import urlparse
 
 from app.domain import ExtractedArticle, RankedArticle
@@ -13,6 +14,7 @@ HIGH_SIGNAL_DOMAINS = {
     "reuters.com": 1.0,
     "www.reuters.com": 1.0,
     "spectrum.ieee.org": 1.0,
+    "theinformation.com": 0.8,
     "www.theinformation.com": 0.8,
 }
 
@@ -60,7 +62,7 @@ def _score_article(article: ExtractedArticle, now: datetime) -> float:
     age_hours = max((now.astimezone(UTC) - basis.astimezone(UTC)).total_seconds() / 3600, 0)
     recency_score = max(0.0, 4.0 - age_hours / 8.0)
     topic_score = _topic_score(article)
-    source_score = HIGH_SIGNAL_DOMAINS.get(article.source_domain, 0.5)
+    source_score = HIGH_SIGNAL_DOMAINS.get(_normalize_domain(article.source_domain), 0.5)
     text_score = min(len(article.cleaned_text) / 2000, 1.2)
     return round(recency_score + topic_score + source_score + text_score, 3)
 
@@ -69,6 +71,7 @@ def _topic_score(article: ExtractedArticle) -> float:
     haystack = f"{article.title} {article.cleaned_text[:1200]}".lower()
     keywords = {
         "robot": 1.6,
+        "robots": 1.6,
         "robotics": 1.6,
         "humanoid": 1.6,
         "warehouse": 1.2,
@@ -80,7 +83,11 @@ def _topic_score(article: ExtractedArticle) -> float:
         "funding": 1.1,
         "policy": 1.0,
     }
-    return sum(weight for word, weight in keywords.items() if word in haystack)
+    return sum(
+        weight
+        for word, weight in keywords.items()
+        if re.search(rf"\b{re.escape(word)}\b", haystack)
+    )
 
 
 def _classify_article(article: ExtractedArticle) -> str:
@@ -99,8 +106,12 @@ def _classify_article(article: ExtractedArticle) -> str:
 def _normalized_url(url: str) -> str:
     parsed = urlparse(url)
     path = parsed.path.rstrip("/")
-    return f"{parsed.netloc.lower()}{path.lower()}"
+    return f"{_normalize_domain(parsed.netloc)}{path.lower()}"
 
 
 def _similar_title(left: str, right: str) -> bool:
     return SequenceMatcher(None, left.lower(), right.lower()).ratio() >= 0.93
+
+
+def _normalize_domain(domain: str) -> str:
+    return domain.lower().removeprefix("www.")

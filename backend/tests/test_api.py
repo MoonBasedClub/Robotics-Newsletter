@@ -91,3 +91,34 @@ def test_runs_api_returns_latest_and_archive():
     assert detail_response.json()["data"]["social_posts"][0]["ordinal"] == 1
 
     app.dependency_overrides.clear()
+
+
+def test_run_endpoints_return_404_when_missing():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = SessionLocal()
+
+    def override_get_db():
+        try:
+            yield session
+        finally:
+            pass
+
+    api_module.engine = engine
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    latest_response = client.get("/api/runs/latest")
+    detail_response = client.get("/api/runs/999")
+
+    assert latest_response.status_code == 404
+    assert latest_response.json()["detail"] == "No runs available"
+    assert detail_response.status_code == 404
+    assert detail_response.json()["detail"] == "Run not found"
+
+    app.dependency_overrides.clear()
