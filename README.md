@@ -53,6 +53,34 @@ Docker Compose starts:
 
 Inside Docker, the frontend dev server proxies API calls to `http://api:8000`. Outside Docker, local Vite development proxies to `http://localhost:8000`.
 
+## Manual scraping
+
+To manually start a fresh scrape without waiting for the scheduler, run:
+
+```bash
+docker compose exec worker python -m app.manual_scrape
+```
+
+To run a fresh scrape for a specific local schedule date, run:
+
+```bash
+docker compose exec worker python -m app.manual_scrape --date 2026-05-03
+```
+
+Manual scrapes intentionally force a new run, even if a partial or completed run already exists for that date. The dashboard treats the newest run for a scheduled date as latest, so this is the simplest developer-only refresh path without adding admin UI.
+
+If the dashboard shows a partial run message, the backend saved the run shell and diagnostics but did not produce selected stories or social posts. That usually means discovery or extraction found candidates, but the later selection/generation stages did not produce final output.
+
+## OpenAI environment variables
+
+The OpenAI variables in `.env.example` are placeholders for the upcoming LLM generation step:
+
+- `OPENAI_API_KEY` is the secret credential the backend will use when it starts calling OpenAI.
+- `OPENAI_SUMMARIZATION_MODEL` is intended for article summaries and "why it matters" text.
+- `OPENAI_SOCIAL_MODEL` is intended for copy-ready social post generation.
+
+Current behavior: the backend does not call OpenAI yet. `backend/app/generation.py` still uses deterministic local summary and social-post logic, so setting these variables will not change generated dashboard content until LLM generation is wired in.
+
 ## Frontend development
 
 ```bash

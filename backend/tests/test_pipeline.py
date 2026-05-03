@@ -124,11 +124,71 @@ def test_run_daily_digest_persists_completed_run(monkeypatch):
     )
 
     run_id = run_daily_digest(session, date_override="2026-04-29")
+    repeated_run_id = run_daily_digest(session, date_override="2026-04-29")
 
     assert run_id == 1
+    assert repeated_run_id == run_id
     run = session.get(models.Run, run_id)
     assert run is not None
     assert run.status == "completed"
     assert len(run.selected_articles) == 1
     assert len(run.social_posts) == 1
     assert run.intro_summary == "A tight robotics-heavy morning."
+    assert len(session.query(models.Run).all()) == 1
+
+
+def test_run_daily_digest_force_creates_fresh_run(monkeypatch):
+    session = _build_session()
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
+    candidate = DiscoveredCandidate(
+        discovered_title="AI agents land in factory planning",
+        discovered_url="https://example.com/factory-agents",
+        source_domain="example.com",
+        discovered_at=now,
+    )
+    article = ExtractedArticle(
+        discovered_title=candidate.discovered_title,
+        discovered_url=candidate.discovered_url,
+        source_domain=candidate.source_domain,
+        discovered_at=now,
+        canonical_url=candidate.discovered_url,
+        title="AI agents land in factory planning",
+        source_name="Example",
+        author=None,
+        published_at=now,
+        cleaned_text="AI agents are moving into planning workflows for factory teams. " * 6,
+    )
+    ranked = RankedArticle(article=article, ranking_score=8.4, category="AI Product")
+    summary = ArticleSummary(
+        article=ranked,
+        summary_short="AI agents land in factory planning: operational software is absorbing agentic workflows.",
+        why_it_matters="Shows agent products entering practical planning systems instead of isolated demos.",
+    )
+
+    monkeypatch.setattr("app.pipeline.discover_candidates", lambda now: [candidate])
+    monkeypatch.setattr("app.pipeline.extract_and_clean", lambda candidates: ([article], []))
+    monkeypatch.setattr("app.pipeline.rank_and_select", lambda articles, now, limit=8: ([ranked], []))
+    monkeypatch.setattr("app.pipeline.summarize_articles", lambda ranked_articles: [summary])
+    monkeypatch.setattr("app.pipeline.generate_intro_summary", lambda summaries: "A practical AI product morning.")
+    monkeypatch.setattr(
+        "app.pipeline.generate_social_posts",
+        lambda summaries: [GeneratedPost(body="AI agents are entering practical operations.", ordinal=1)],
+    )
+    monkeypatch.setattr(
+        "app.pipeline.get_settings",
+        lambda: SimpleNamespace(
+            scheduler_timezone="America/New_York",
+            daily_run_hour=9,
+            daily_run_minute=0,
+        ),
+    )
+
+    first_run_id = run_daily_digest(session, date_override="2026-04-29")
+    forced_run_id = run_daily_digest(session, date_override="2026-04-29", force=True)
+
+    assert first_run_id == 1
+    assert forced_run_id == 2
+    runs = session.query(models.Run).order_by(models.Run.id).all()
+    assert len(runs) == 2
+    assert runs[0].scheduled_for == runs[1].scheduled_for
+    assert all(run.status == "completed" for run in runs)

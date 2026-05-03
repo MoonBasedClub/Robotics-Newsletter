@@ -12,13 +12,18 @@ from app.generation import generate_intro_summary, generate_social_posts, summar
 from app.ranking import rank_and_select
 
 
-def run_daily_digest(session: Session, date_override: str | None = None) -> int:
+def run_daily_digest(
+    session: Session,
+    date_override: str | None = None,
+    force: bool = False,
+) -> int:
     scheduled_for = _resolve_schedule(date_override)
-    existing = session.scalar(
-        select(models.Run).where(models.Run.scheduled_for == scheduled_for)
-    )
-    if existing is not None:
-        return existing.id
+    if not force:
+        existing = session.scalar(
+            select(models.Run).where(models.Run.scheduled_for == scheduled_for)
+        )
+        if existing is not None:
+            return existing.id
 
     now = datetime.now(UTC)
     run = models.Run(
