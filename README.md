@@ -71,15 +71,15 @@ Manual scrapes intentionally force a new run, even if a partial or completed run
 
 If the dashboard shows a partial run message, the backend saved the run shell and diagnostics but did not produce selected stories or social posts. That usually means discovery or extraction found candidates, but the later selection/generation stages did not produce final output.
 
-## OpenAI environment variables
+## OpenAI generation
 
-The OpenAI variables in `.env.example` are placeholders for the upcoming LLM generation step:
+The backend uses OpenAI for article summaries, the dashboard intro, and social posts when `OPENAI_API_KEY` is configured:
 
 - `OPENAI_API_KEY` is the secret credential the backend will use when it starts calling OpenAI.
-- `OPENAI_SUMMARIZATION_MODEL` is intended for article summaries and "why it matters" text.
-- `OPENAI_SOCIAL_MODEL` is intended for copy-ready social post generation.
+- `OPENAI_SUMMARIZATION_MODEL` controls article summaries, "why it matters" text, and the run intro. The MVP default is `gpt-5.4-mini`.
+- `OPENAI_SOCIAL_MODEL` controls copy-ready social post generation. The MVP default is `gpt-5.4-mini`.
 
-Current behavior: the backend does not call OpenAI yet. `backend/app/generation.py` still uses deterministic local summary and social-post logic, so setting these variables will not change generated dashboard content until LLM generation is wired in.
+Generation uses the OpenAI Responses API with structured outputs so the backend receives predictable fields to persist. If the API key is missing or an OpenAI call fails, the scraper falls back to deterministic local generation instead of failing the whole run.
 
 ## Frontend development
 
@@ -98,6 +98,6 @@ The pipeline is intentionally lightweight for MVP:
 - Google News RSS query discovery
 - HTML extraction and article cleaning
 - Heuristic ranking and categorization
-- Deterministic summary and social-post generation
+- OpenAI-backed summary and social-post generation with deterministic fallback
 
 That gives us a stable end-to-end backend contract in Docker before we swap in richer LLM generation and more resilient source handling.

@@ -1,0 +1,18 @@
+{
+  "name": "news-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Robotics and AI news scraper with a FastAPI backend and Vite dashboard.",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "lint": "npm --prefix frontend run lint",
+    "visual:check": "npm --prefix frontend run visual:check",
+    "install:frontend": "npm --prefix frontend install"
+  },
+  "engines": {
+    "node": ">=20.19.0",
+    "npm": ">=10"
+  }
+}

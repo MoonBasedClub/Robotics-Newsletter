@@ -5,7 +5,7 @@ from typing import Callable
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from app.domain import DiscoveredCandidate, ExtractedArticle
 
@@ -61,7 +61,13 @@ def _extract_article(candidate: DiscoveredCandidate, html: str) -> ExtractedArti
         junk.decompose()
 
     article_root = soup.find("article")
-    content_root = article_root or soup.body or soup
+    content_root: BeautifulSoup | Tag
+    if isinstance(article_root, Tag):
+        content_root = article_root
+    elif soup.body is not None:
+        content_root = soup.body
+    else:
+        content_root = soup
     paragraphs: list[str] = []
     seen_paragraphs: set[str] = set()
     for node in content_root.find_all(["p", "li"]):
@@ -88,17 +94,27 @@ def _extract_article(candidate: DiscoveredCandidate, html: str) -> ExtractedArti
 
 def _first_meta_property(soup: BeautifulSoup, prop: str) -> str | None:
     tag = soup.find("meta", attrs={"property": prop})
-    return tag.get("content", "").strip() if tag else None
+    return _string_attr(tag, "content")
 
 
 def _first_meta_name(soup: BeautifulSoup, name: str) -> str | None:
     tag = soup.find("meta", attrs={"name": name})
-    return tag.get("content", "").strip() if tag else None
+    return _string_attr(tag, "content")
 
 
 def _first_meta(soup: BeautifulSoup, tag_name: str, attr_name: str, attr_value: str) -> str | None:
     tag = soup.find(tag_name, attrs={attr_name: attr_value})
-    return tag.get("href", "").strip() if tag else None
+    return _string_attr(tag, "href")
+
+
+def _string_attr(tag: object, attr_name: str) -> str | None:
+    if not isinstance(tag, Tag):
+        return None
+    value = tag.get(attr_name)
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 def _parse_datetime(raw_value: str | None) -> datetime | None:

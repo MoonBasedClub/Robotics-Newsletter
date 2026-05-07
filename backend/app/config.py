@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     daily_run_hour: int = 9
     daily_run_minute: int = 0
     run_on_startup: bool = True
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_summarization_model: str = Field(
+        default="gpt-5.4-mini",
+        alias="OPENAI_SUMMARIZATION_MODEL",
+    )
+    openai_social_model: str = Field(
+        default="gpt-5.4-mini",
+        alias="OPENAI_SOCIAL_MODEL",
+    )
 
 
 @lru_cache

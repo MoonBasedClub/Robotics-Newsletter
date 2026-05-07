@@ -1,5 +1,9 @@
+from base64 import urlsafe_b64encode
 from datetime import UTC, datetime, timedelta
+from html import escape as escape_attr
+import json
 from types import SimpleNamespace
+from xml.sax.saxutils import escape as escape_xml
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -7,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import models
 from app.database import Base
-from app.discovery import discover_candidates
+from app.discovery import _resolve_google_news_url, discover_candidates
 from app.domain import DiscoveredCandidate, ExtractedArticle
 from app.extraction import extract_and_clean
 from app.pipeline import run_daily_digest
@@ -53,6 +57,59 @@ def _article(
     )
 
 
+def _google_news_article_link(article_url: str) -> str:
+    encoded = urlsafe_b64encode(
+        b"\x08\x13" + article_url.encode("utf-8") + b"\xd2\x01\x00"
+    ).decode("ascii").rstrip("=")
+    return f"https://news.google.com/rss/articles/{encoded}?oc=5"
+
+
+def _google_news_wrapper_html(article_id: str) -> str:
+    data_payload = "%.@." + json.dumps(
+        [
+            [
+                "en-US",
+                "US",
+                ["FINANCE_TOP_INDICES", "WEB_TEST_1_0_0"],
+                None,
+                None,
+                1,
+                1,
+                "US:en",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                False,
+                5,
+            ],
+            "en-US",
+            "US",
+            True,
+            [3, 5, 9, 19],
+            1,
+            True,
+            "910314302",
+            None,
+            None,
+            None,
+            False,
+            article_id,
+            1,
+            1,
+            None,
+            False,
+            1778120025,
+            "test-signature",
+        ],
+        separators=(",", ":"),
+    )
+    return f'<html><body><c-wiz data-p="{escape_attr(data_payload)}"></c-wiz></body></html>'
+
+
 def test_discovery_filters_old_invalid_and_duplicate_rss_items():
     now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
     fresh_date = now.strftime("%a, %d %b %Y %H:%M:%S GMT")
@@ -86,6 +143,91 @@ def test_discovery_filters_old_invalid_and_duplicate_rss_items():
 
     assert len(candidates) == 1
     assert candidates[0].discovered_url == "https://example.com/story?utm_source=rss"
+    assert candidates[0].source_domain == "example.com"
+
+
+def test_discovery_resolves_encoded_google_news_article_links():
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
+    fresh_date = now.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    article_url = "https://robotics.example.com/news/humanoid-pilot?utm_source=google-news"
+    google_link = escape_xml(_google_news_article_link(article_url))
+    xml = f"""
+    <rss><channel>
+      <item>
+        <title>Humanoid robots enter warehouse pilot</title>
+        <link>{google_link}</link>
+        <pubDate>{fresh_date}</pubDate>
+      </item>
+    </channel></rss>
+    """
+
+    candidates = discover_candidates(now=now, fetcher=lambda _: xml)
+
+    assert len(candidates) == 1
+    assert candidates[0].discovered_url == article_url
+    assert candidates[0].source_domain == "robotics.example.com"
+
+
+def test_discovery_skips_unresolvable_google_news_article_links():
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
+    fresh_date = now.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    xml = f"""
+    <rss><channel>
+      <item>
+        <title>Google wrapper without original URL</title>
+        <link>https://news.google.com/rss/articles/not-a-decodable-id?oc=5</link>
+        <pubDate>{fresh_date}</pubDate>
+      </item>
+    </channel></rss>
+    """
+
+    candidates = discover_candidates(now=now, fetcher=lambda _: xml)
+
+    assert candidates == []
+
+
+def test_google_news_resolver_uses_batch_fallback_for_opaque_article_ids():
+    article_url = "https://example.com/robotics/story?utm_source=google-news"
+    article_id = "CBMopaqueArticleId"
+    link = f"https://news.google.com/rss/articles/{article_id}?oc=5"
+    response = (
+        ")]}'\n"
+        f'[[["wrb.fr","Fbv4je","[\\"garturlres\\",\\"{article_url}\\",1]",'
+        'null,null,null,"generic"]]]'
+    )
+
+    resolved = _resolve_google_news_url(
+        link,
+        wrapper_fetcher=lambda _: _google_news_wrapper_html(article_id),
+        batch_fetcher=lambda _: response,
+    )
+
+    assert resolved == article_url
+
+
+def test_discovery_dedupes_old_and_encoded_google_news_wrappers():
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
+    fresh_date = now.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    article_url = "https://example.com/story"
+    google_link = escape_xml(_google_news_article_link(article_url))
+    xml = f"""
+    <rss><channel>
+      <item>
+        <title>Robotics pilot original wrapper</title>
+        <link>https://news.google.com/rss/articles/example?url=https%3A%2F%2Fexample.com%2Fstory%3Futm_source%3Drss</link>
+        <pubDate>{fresh_date}</pubDate>
+      </item>
+      <item>
+        <title>Robotics pilot encoded wrapper</title>
+        <link>{google_link}</link>
+        <pubDate>{fresh_date}</pubDate>
+      </item>
+    </channel></rss>
+    """
+
+    candidates = discover_candidates(now=now, fetcher=lambda _: xml)
+
+    assert len(candidates) == 1
     assert candidates[0].source_domain == "example.com"
 
 
