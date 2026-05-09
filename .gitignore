@@ -28,6 +28,8 @@ playwright-report/
 test-results/
 *.egg-info/
 *.log
+*.dump
+*.sql
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -41,3 +43,7 @@ Thumbs.db
 .idea/
 postgres_data/
 docker-compose.override.yml
+passover.md
+Plan.md
+api-handoff.md
+comprehensive.md

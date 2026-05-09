@@ -19,9 +19,7 @@ def run_daily_digest(
 ) -> int:
     scheduled_for = _resolve_schedule(date_override)
     if not force:
-        existing = session.scalar(
-            select(models.Run).where(models.Run.scheduled_for == scheduled_for)
-        )
+        existing = get_run_for_schedule(session, scheduled_for)
         if existing is not None:
             return existing.id
 
@@ -107,6 +105,12 @@ def run_daily_digest(
         run.completed_at = datetime.now(UTC)
         session.commit()
         raise
+
+
+def get_run_for_schedule(session: Session, scheduled_for: datetime) -> models.Run | None:
+    return session.scalar(
+        select(models.Run).where(models.Run.scheduled_for == scheduled_for)
+    )
 
 
 def _resolve_schedule(date_override: str | None) -> datetime:

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from app.domain import ExtractedArticle, RankedArticle
 from app.extraction import cleaned_text_hash
@@ -24,36 +24,46 @@ def rank_and_select(
     now: datetime,
     limit: int = 8,
 ) -> tuple[list[RankedArticle], list[tuple[ExtractedArticle, str]]]:
-    deduped: list[RankedArticle] = []
     rejected: list[tuple[ExtractedArticle, str]] = []
     seen_urls: set[str] = set()
     seen_hashes: set[str] = set()
-    ranked_pool: list[RankedArticle] = []
+    seen_fingerprints: list[set[str]] = []
+    ranked_pool = [
+        RankedArticle(
+            article=article,
+            ranking_score=_score_article(article, now),
+            category=_classify_article(article),
+        )
+        for article in articles
+    ]
+    ranked_pool.sort(key=lambda item: item.ranking_score, reverse=True)
 
-    for article in articles:
+    deduped_pool: list[RankedArticle] = []
+    for ranked_article in ranked_pool:
+        article = ranked_article.article
         normalized_url = _normalized_url(article.canonical_url)
         text_hash = cleaned_text_hash(article.cleaned_text)
-        if normalized_url in seen_urls or text_hash in seen_hashes:
-            rejected.append((article, "duplicate"))
+        fingerprint = _text_fingerprint(article.cleaned_text)
+
+        if normalized_url in seen_urls:
+            rejected.append((article, "duplicate_url"))
             continue
 
-        if any(_similar_title(article.title, existing.article.title) for existing in ranked_pool):
+        if text_hash in seen_hashes or any(_similar_text(fingerprint, seen) for seen in seen_fingerprints):
+            rejected.append((article, "duplicate_text"))
+            continue
+
+        if any(_similar_title(article.title, existing.article.title) for existing in deduped_pool):
             rejected.append((article, "duplicate_title"))
             continue
 
         seen_urls.add(normalized_url)
         seen_hashes.add(text_hash)
-        ranked_pool.append(
-            RankedArticle(
-                article=article,
-                ranking_score=_score_article(article, now),
-                category=_classify_article(article),
-            )
-        )
+        seen_fingerprints.append(fingerprint)
+        deduped_pool.append(ranked_article)
 
-    ranked_pool.sort(key=lambda item: item.ranking_score, reverse=True)
-    deduped = ranked_pool[:limit]
-    rejected.extend((item.article, "below_cutoff") for item in ranked_pool[limit:])
+    deduped = deduped_pool[:limit]
+    rejected.extend((item.article, "below_cutoff") for item in deduped_pool[limit:])
     return deduped, rejected
 
 
@@ -105,13 +115,69 @@ def _classify_article(article: ExtractedArticle) -> str:
 
 def _normalized_url(url: str) -> str:
     parsed = urlparse(url)
+    query = urlencode(
+        [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if not _is_tracking_param(key)
+        ],
+        doseq=True,
+    )
     path = parsed.path.rstrip("/")
-    return f"{_normalize_domain(parsed.netloc)}{path.lower()}"
+    return urlunparse(
+        (
+            "",
+            _normalize_domain(parsed.netloc),
+            path.lower(),
+            "",
+            query,
+            "",
+        )
+    )
 
 
 def _similar_title(left: str, right: str) -> bool:
-    return SequenceMatcher(None, left.lower(), right.lower()).ratio() >= 0.93
+    return SequenceMatcher(None, _normalize_title(left), _normalize_title(right)).ratio() >= 0.90
 
 
 def _normalize_domain(domain: str) -> str:
     return domain.lower().removeprefix("www.")
+
+
+def _is_tracking_param(name: str) -> bool:
+    lowered = name.lower()
+    return lowered.startswith("utm_") or lowered in {
+        "fbclid",
+        "gclid",
+        "mc_cid",
+        "mc_eid",
+        "oc",
+    }
+
+
+def _normalize_title(title: str) -> str:
+    title_without_source = re.split(r"\s[-|]\s", title, maxsplit=1)[0]
+    normalized = re.sub(r"[^a-z0-9\s]", " ", title_without_source.lower())
+    return " ".join(normalized.split())
+
+
+def _text_fingerprint(text: str, shingle_size: int = 5) -> set[str]:
+    tokens = [
+        token
+        for token in re.findall(r"[a-z0-9]+", text.lower())
+        if len(token) > 2
+    ]
+    if len(tokens) < shingle_size:
+        return set(tokens)
+    return {
+        " ".join(tokens[index : index + shingle_size])
+        for index in range(len(tokens) - shingle_size + 1)
+    }
+
+
+def _similar_text(left: set[str], right: set[str]) -> bool:
+    if not left or not right:
+        return False
+    overlap = len(left & right)
+    union = len(left | right)
+    return overlap / union >= 0.72

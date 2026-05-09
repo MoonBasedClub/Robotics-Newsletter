@@ -41,7 +41,6 @@ def test_resolve_schedule_uses_new_york_9am_across_dst(monkeypatch):
 
 def test_rank_and_select_dedupes_and_caps_results():
     now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
-    base_text = "Warehouse robotics is moving into measured deployment at scale. " * 8
     titles = [
         "Warehouse robotics expands into retail fulfillment",
         "Humanoid robots enter a logistics pilot",
@@ -65,7 +64,11 @@ def test_rank_and_select_dedupes_and_caps_results():
             source_name="Example",
             author=None,
             published_at=now,
-            cleaned_text=base_text + str(index),
+            cleaned_text=(
+                f"{titles[index]} includes unique reporting angle {index} with robotics deployment details. "
+                f"Operators cite separate customer evidence, procurement timelines, and technical constraints {index}. "
+            )
+            * 8,
         )
         for index in range(10)
     ]
@@ -73,7 +76,7 @@ def test_rank_and_select_dedupes_and_caps_results():
     selected, rejected = rank_and_select(articles, now=now, limit=8)
 
     assert len(selected) == 8
-    assert any(reason in {"duplicate", "duplicate_title", "below_cutoff"} for _, reason in rejected)
+    assert any(reason in {"duplicate_url", "duplicate_title", "below_cutoff"} for _, reason in rejected)
     assert selected[0].ranking_score >= selected[-1].ranking_score
 
 

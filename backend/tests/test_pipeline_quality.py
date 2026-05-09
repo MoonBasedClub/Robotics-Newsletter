@@ -285,6 +285,107 @@ def test_ranking_uses_word_boundaries_for_ai_signal():
     assert selected[0].ranking_score > selected[1].ranking_score
 
 
+def test_ranking_dedupes_tracking_url_variants():
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
+    text = "AI agents are moving into enterprise operations with measurable workflow gains. " * 8
+
+    selected, rejected = rank_and_select(
+        [
+            _article("AI agents land in operations", text, "https://www.example.com/story?utm_source=rss"),
+            _article("AI agents land in operations", text + " Extra reporting.", "https://example.com/story?fbclid=123"),
+        ],
+        now=now,
+        limit=8,
+    )
+
+    assert len(selected) == 1
+    assert rejected[0][1] == "duplicate_url"
+
+
+def test_ranking_dedupes_same_story_with_different_urls_and_titles():
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
+    shared_text = (
+        "A robotics startup announced warehouse pilots with national retailers this week. "
+        "The deployment focuses on unloading, tote movement, and repetitive inventory tasks. "
+        "Executives said the systems will be measured on uptime, safety, throughput, and labor fit. "
+        "Investors described the rollout as a test of whether humanoid systems can leave demos behind. "
+    ) * 6
+
+    selected, rejected = rank_and_select(
+        [
+            _article(
+                "Robotics startup expands warehouse pilots",
+                shared_text,
+                "https://publisher-a.example.com/robotics-pilot",
+                "publisher-a.example.com",
+            ),
+            _article(
+                "Humanoid robot company moves into retailer warehouses",
+                shared_text + " The company declined to share pricing.",
+                "https://publisher-b.example.com/retail-automation",
+                "publisher-b.example.com",
+            ),
+        ],
+        now=now,
+        limit=8,
+    )
+
+    assert len(selected) == 1
+    assert rejected[0][1] == "duplicate_text"
+
+
+def test_ranking_dedupes_normalized_title_variants():
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
+    first_text = (
+        "Warehouse automation buyers are evaluating robot fleets with new performance metrics. "
+        "The report describes uptime, error recovery, and operational constraints in detail. "
+    ) * 8
+    second_text = (
+        "Enterprise robotics teams are comparing deployment economics across multiple sites. "
+        "The article focuses on budget cycles, integration work, and vendor evaluation. "
+    ) * 8
+
+    selected, rejected = rank_and_select(
+        [
+            _article("Robot safety standards get industry draft - Example", first_text, "https://example.com/a"),
+            _article("Robot safety standards get industry draft | Another Site", second_text, "https://another.example.com/b"),
+        ],
+        now=now,
+        limit=8,
+    )
+
+    assert len(selected) == 1
+    assert rejected[0][1] == "duplicate_title"
+
+
+def test_ranking_keeps_unrelated_same_topic_stories():
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
+
+    selected, rejected = rank_and_select(
+        [
+            _article(
+                "Robotics startup raises funding",
+                "A robotics company raised a new round for factory automation deployments. "
+                "The financing will support manufacturing, hiring, and customer pilots. "
+                * 8,
+                "https://example.com/funding",
+            ),
+            _article(
+                "Robot safety standards reach committee",
+                "A standards group published draft safety guidance for warehouse robot operation. "
+                "The proposal covers testing, incident reporting, and operator training. "
+                * 8,
+                "https://example.com/policy",
+            ),
+        ],
+        now=now,
+        limit=8,
+    )
+
+    assert len(selected) == 2
+    assert rejected == []
+
+
 def test_pipeline_marks_partial_run_and_extraction_failure(monkeypatch):
     session = _build_session()
     candidate = _candidate("https://example.com/no-body", "AI story with no body")

@@ -48,10 +48,16 @@ Docker Compose starts:
 
 - `frontend` on `http://localhost:5173`
 - `api` on `http://localhost:8000`
-- `worker` for scheduled scraping/generation
+- `worker` for local development experiments with scheduled scraping/generation
 - `db` on local port `5432`
 
 Inside Docker, the frontend dev server proxies API calls to `http://api:8000`. Outside Docker, local Vite development proxies to `http://localhost:8000`.
+
+## Production scheduling
+
+Production 9:00 AM America/New_York scraping is handled by GitHub Actions in `.github/workflows/daily-scrape.yml`. The workflow runs against the shared `DATABASE_URL` secret, which should point to Supabase or another reachable Postgres database.
+
+Local Docker scheduling is development-only because it depends on the host machine staying awake. Keep `RUN_ON_STARTUP=false` locally unless you intentionally want the worker to scrape as soon as the container starts.
 
 ## Manual scraping
 

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     scheduler_timezone: str = "America/New_York"
     daily_run_hour: int = 9
     daily_run_minute: int = 0
-    run_on_startup: bool = True
+    run_on_startup: bool = False
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_summarization_model: str = Field(
         default="gpt-5.4-mini",
