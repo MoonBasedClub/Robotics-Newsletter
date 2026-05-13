@@ -44,6 +44,7 @@ Thumbs.db
 postgres_data/
 docker-compose.override.yml
 
+*.md
 passover.md
 Plan.md
 api-handoff.md
