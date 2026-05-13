@@ -45,6 +45,23 @@ def test_is_in_schedule_window_accepts_github_cron_drift(monkeypatch):
     )
 
 
+def test_should_run_at_allows_late_scheduled_action(monkeypatch):
+    monkeypatch.setattr(scheduled_scrape, "get_settings", _settings)
+
+    late_start = datetime(2026, 5, 12, 12, 26, tzinfo=ZoneInfo("America/New_York"))
+
+    assert not scheduled_scrape.should_run_at(late_start)
+    assert scheduled_scrape.should_run_at(late_start, allow_late=True)
+
+
+def test_should_run_at_rejects_early_scheduled_action(monkeypatch):
+    monkeypatch.setattr(scheduled_scrape, "get_settings", _settings)
+
+    early_start = datetime(2026, 1, 12, 8, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    assert not scheduled_scrape.should_run_at(early_start, allow_late=True)
+
+
 def test_scheduled_scrape_exits_outside_window(monkeypatch):
     calls = []
 
@@ -79,6 +96,27 @@ def test_scheduled_scrape_runs_inside_window(monkeypatch):
 
     assert scheduled_scrape.main([]) == 0
     assert calls[1] == ("run", fake_session, "2026-05-08", False)
+    assert fake_session.closed is True
+
+
+def test_scheduled_scrape_runs_late_schedule(monkeypatch):
+    fake_session = _FakeSession()
+    calls = []
+
+    class LateWindowDateTime(_FixedDateTime):
+        current = datetime(2026, 5, 12, 12, 26, tzinfo=ZoneInfo("America/New_York"))
+
+    monkeypatch.setattr(scheduled_scrape, "datetime", LateWindowDateTime)
+    monkeypatch.setattr(scheduled_scrape, "get_settings", _settings)
+    monkeypatch.setattr(scheduled_scrape.Base.metadata, "create_all", lambda bind: calls.append(("create_all", bind)))
+    monkeypatch.setattr(scheduled_scrape, "engine", object())
+    monkeypatch.setattr(scheduled_scrape, "SessionLocal", lambda: fake_session)
+    monkeypatch.setattr(scheduled_scrape, "_resolve_schedule", lambda date_override: datetime(2026, 5, 12, 13, 0))
+    monkeypatch.setattr(scheduled_scrape, "get_run_for_schedule", lambda session, scheduled_for: None)
+    monkeypatch.setattr(scheduled_scrape, "run_daily_digest", lambda *args, **kwargs: calls.append(("run", args, kwargs)) or 42)
+
+    assert scheduled_scrape.main(["--allow-late-schedule"]) == 0
+    assert calls[1][0] == "run"
     assert fake_session.closed is True
 
 

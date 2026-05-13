@@ -26,8 +26,8 @@ jobs:
       OPENAI_SUMMARIZATION_MODEL: ${{ secrets.OPENAI_SUMMARIZATION_MODEL }}
       OPENAI_SOCIAL_MODEL: ${{ secrets.OPENAI_SOCIAL_MODEL }}
       SCHEDULER_TIMEZONE: America/New_York
-      DAILY_RUN_HOUR: "9"
-      DAILY_RUN_MINUTE: "0"
+      DAILY_RUN_HOUR: "5"
+      DAILY_RUN_MINUTE: "30"
       RUN_ON_STARTUP: "false"
 
     steps:
@@ -48,6 +48,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_window }}" = "true" ]; then
             python -m app.scheduled_scrape --force-window
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            python -m app.scheduled_scrape --allow-late-schedule
           else
             python -m app.scheduled_scrape
           fi

@@ -27,13 +27,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Bypass the local-time schedule window. Useful for manual GitHub workflow verification.",
     )
+    parser.add_argument(
+        "--allow-late-schedule",
+        action="store_true",
+        help="Allow scheduled runners to start after the local schedule window when GitHub Actions is delayed.",
+    )
     args = parser.parse_args(argv)
 
     settings = get_settings()
     tz = ZoneInfo(settings.scheduler_timezone)
     now = datetime.now(tz)
 
-    if not args.force_window and not is_in_schedule_window(now):
+    if not args.force_window and not should_run_at(now, allow_late=args.allow_late_schedule):
         logger.info(
             "outside scheduled window now=%s timezone=%s target=%02d:%02d",
             now.isoformat(),
@@ -80,6 +85,18 @@ def is_in_schedule_window(now: datetime) -> bool:
         <= current_minutes
         <= scheduled_minutes + DEFAULT_WINDOW_END_MINUTE
     )
+
+
+def should_run_at(now: datetime, *, allow_late: bool = False) -> bool:
+    if is_in_schedule_window(now):
+        return True
+    if not allow_late:
+        return False
+
+    settings = get_settings()
+    scheduled_minutes = settings.daily_run_hour * 60 + settings.daily_run_minute
+    current_minutes = now.hour * 60 + now.minute
+    return current_minutes >= scheduled_minutes + DEFAULT_WINDOW_START_MINUTE
 
 
 if __name__ == "__main__":
